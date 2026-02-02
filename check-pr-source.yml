@@ -1,0 +1,20 @@
+name: Enforce Dev → Main PRs
+
+# Trigger this workflow on pull requests to main
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check-pr-source:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check PR source branch
+        run: |
+          echo "PR source branch: ${{ github.head_ref }}"
+          if [ "${{ github.head_ref }}" != "dev" ]; then
+            echo "❌ Pull Requests to main must come from 'dev' branch!"
+            exit 1
+          fi
