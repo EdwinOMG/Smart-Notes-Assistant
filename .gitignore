@@ -11,6 +11,8 @@ __pycache__/
 dist/
 build/
 
+google-key.json
+
 # Virtual Environment
 venv/
 env/
