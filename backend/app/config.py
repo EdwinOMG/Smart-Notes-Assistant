@@ -1,0 +1,34 @@
+from pydantic_settings import BaseSettings
+from functools import lru_cache
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+    
+    # App settings
+    app_name: str = "NotePeel"
+    debug: bool = True
+    
+    # Database
+    database_url: str = "postgresql://postgres:postgres@localhost:5432/notepeel"
+    
+    # JWT Auth
+    secret_key: str = "your-secret-key-change-in-production"
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60
+    
+    # File upload settings
+    max_file_size: int = 10 * 1024 * 1024  # 10MB
+    allowed_extensions: set = {"png", "jpg", "jpeg", "gif", "bmp", "tiff"}
+    
+    # Google Cloud - supports both API key and service account
+    google_cloud_api_key: str = ""
+    google_application_credentials: str = ""
+    
+    class Config:
+        env_file = ".env"
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    return Settings()
