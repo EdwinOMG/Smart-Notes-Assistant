@@ -1,0 +1,13 @@
+Researched OCR
+
+Created a basic front end and back end to test ocr and upload features (not uploaded to repo)
+
+Tested different options such as tesseract and google cloud vision, leading to decision to use google cloud vision.
+
+Tesseract proved capable of handling digital notes, however, could not properly extract handwritten notes. Tesseract also runs locally.
+
+Google Cloud Vision performed well with only minor hiccups. An ai model to structure extracted text and fix grammar needed. 
+
+Researched db and JWT in order to create login feature, as well as saved notes (soon to be implemented).
+
+
