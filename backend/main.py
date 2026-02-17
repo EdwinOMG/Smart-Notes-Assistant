@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.database import create_tables, get_db
 from app.routes.auth_routes import router as auth_router
+from app.routes.note_routes import router as note_router
 from app.controllers.auth_controller import get_current_user
 from app.models.user import User
 
@@ -35,8 +36,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include auth routes
+# Include routers
 app.include_router(auth_router)
+app.include_router(note_router)
 
 
 @app.on_event("startup")
@@ -62,28 +64,6 @@ async def ocr(file: UploadFile = File(...)):
         return {"error": str(e)}
     
     print(structured_data)
-    return structured_data
-
-
-# Protected OCR endpoint (requires auth)
-@app.post("/api/ocr")
-async def ocr_protected(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user)
-):
-    """OCR endpoint (authentication required)."""
-    contents = await file.read()
-    
-    if not contents:
-        return {"error": "Uploaded file is empty"}
-    
-    print(f"User: {current_user.email}, File: {file.filename}, Size: {len(contents)} bytes")
-    
-    try:
-        structured_data = extract_structured_text(contents)
-    except Exception as e:
-        return {"error": str(e)}
-    
     return structured_data
 
 
