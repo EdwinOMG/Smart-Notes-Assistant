@@ -2,7 +2,7 @@
 
 class OCRConfig:
     
-   
+    USE_IMAGE_PREPROCESSING = False
     
     
     

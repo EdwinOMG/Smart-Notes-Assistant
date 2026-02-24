@@ -2,6 +2,7 @@ from google.cloud import vision
 from typing import Dict, List, Any, Optional
 import re
 from ocr_config import DEFAULT_CONFIG, OCRConfig
+from image_preprocessing import preprocess_image
 
 print("OCR SERVICE LOADED")
 client = vision.ImageAnnotatorClient()
@@ -12,6 +13,37 @@ class DocumentStructureAnalyzer:
 
 
     
+
+    def is_section_header(self, text: str, position_y: Optional[float] = None,
+                     position_x: Optional[float] = None,
+                     page_width: Optional[float] = None,
+                     font_size: Optional[float] = None,
+                     avg_font_size: Optional[float] = None) -> bool:
+    
+        # must have data
+        if not font_size or not avg_font_size:
+            return False
+        
+        # font is atleast 2x average size
+        is_large = font_size >= (avg_font_size * 2.0)
+        
+        # if text is centered on page
+        is_centered = False
+        if position_x is not None and page_width:
+            center_ratio = position_x / page_width
+            is_centered = 0.3 <= center_ratio <= 0.7  
+        
+        # must meet both or be very large
+        is_very_large = font_size >= (avg_font_size * 2.5)
+        
+        result = (is_large and is_centered) or is_very_large
+        
+        if result and self.config.DEBUG_MODE:
+            print(f"Section header detected: '{text}' (font: {font_size}, avg: {avg_font_size}, centered: {is_centered})")
+        
+        return result
+    
+
     #Determine if a line is a bullet point
     def is_bullet_point(self, text: str) -> bool:
         for pattern in self.config.BULLET_PATTERNS:
@@ -23,26 +55,40 @@ class DocumentStructureAnalyzer:
     
     #determine table rows
     def is_table_row(self, words: List[str]) -> bool:
+        
+        
+        # must have minimum columns
         if len(words) < self.config.MIN_TABLE_COLUMNS:
             return False
-       
-       #check for numbers (more common in tables)
+        
+        # check for numbers (more common in tables)
         num_numeric = sum(1 for word in words if any(char.isdigit() for char in word))
         numeric_ratio = num_numeric / len(words)
-
-    #check for delimiters (e.g. tabs, pipes) that often indicate table structure#
-        has_delimiters = any(
-            delimiter in word
-            for word in words
-            for delimiter in self.config.TABLE_DELIMITERS
-       )
-
-        is_table = numeric_ratio > self.config.TABLE_NUMERIC_THRESHOLD or has_delimiters
-       
+        
+        # check for delimiters (tabs, pipes) that often indicate table structure
+        delimiter_count = sum(
+            1 for word in words 
+            for delimiter in self.config.TABLE_DELIMITERS 
+            if delimiter in word
+        )
+        has_delimiters = delimiter_count >= 2  # need at least 2 delimiter instances
+        
+        # check if words are reasonably short (cells are usually concise)
+        avg_word_length = sum(len(w) for w in words) / len(words)
+        if avg_word_length > 10:  # too long for word length
+            return False
+        
+        # must have BOTH high numeric content AND delimiters
+        is_table = (numeric_ratio >= self.config.TABLE_NUMERIC_THRESHOLD) and has_delimiters
+        
         if is_table and self.config.DEBUG_MODE:
-           print(f"Table row detected: '{' '.join(words)}'")
+            print(f"Table row detected: '{' '.join(words)}'")
+        
         return is_table
-    
+
+
+
+
     #check if text is key value pair
     def is_key_value_pair(self, text: str) -> tuple[bool, Optional[str], Optional[str]]:
 
@@ -82,15 +128,36 @@ class DocumentStructureAnalyzer:
     #check if text is a paragraph by length
     def is_paragraph(self, text: str) -> bool:
         words = text.split()
-        return (len(words) >= self.config.MIN_PARAGRAPH_WORDS and len(words) <= self.config.MIN_PARAGRAPH_CHARS)
+        return (len(words) >= self.config.MIN_PARAGRAPH_WORDS and len(text) >= self.config.MIN_PARAGRAPH_CHARS)
     
+
+
+
+
+
+
+
 
 #extract structured text from image bytes using google vision, using configurable header and section detection
 def extract_structured_text(image_bytes: bytes, config: OCRConfig = DEFAULT_CONFIG) -> Dict[str, Any]:
-
-    image = vision.Image(content=image_bytes)
-    response = client.document_text_detection(image=image)
-
+    
+    if config.USE_IMAGE_PREPROCESSING:
+        print("Image preprocessing ENABLED")
+        preprocessed_images = preprocess_image(image_bytes)
+        
+        all_results = []
+        for img_bytes in preprocessed_images:
+            image = vision.Image(content=img_bytes)
+            response = client.document_text_detection(image=image)
+            if not response.error.message:
+                all_results.append(response)
+        
+        response = max(all_results, key=lambda r: len(r.full_text_annotation.text) if r.full_text_annotation.text else 0)
+    else:
+        print("Image preprocessing DISABLED - using original image")
+        image = vision.Image(content=image_bytes)
+        response = client.document_text_detection(image=image)
+    
     if response.error.message:
         raise Exception(f"Google Vision API error: {response.error.message}")
     
@@ -138,7 +205,7 @@ def extract_structured_text(image_bytes: bytes, config: OCRConfig = DEFAULT_CONF
     document_structure = {
         "headers": [],
         "sections": [],
-        "key_values": [],
+        "key_values": {},
         "bullet_points": [],
         "tables": [],
         "paragraphs": []
@@ -177,12 +244,12 @@ def extract_structured_text(image_bytes: bytes, config: OCRConfig = DEFAULT_CONF
 
         words = line.split()
         if analyzer.is_table_row(words):
-            table_buffer.append(line)
+            table_buffer.append(words)
             continue
         else:
             if table_buffer:
                 document_structure["tables"].append(table_buffer)
-                if config.section_GROUPING_ENABLED:
+                if config.SECTION_GROUPING_ENABLED:
                     current_section_content.append({
                         "type": "table",
                         "rows": table_buffer
