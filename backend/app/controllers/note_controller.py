@@ -44,19 +44,54 @@ class NoteController:
         # Perform OCR
         try:
             ocr_result = extract_structured_text(file_content)
-            raw_text = ocr_result.get('raw_text', '')
             
-            # If raw_text is empty, try to build it from key_values and table_rows
-            if not raw_text:
-                parts = []
-                if ocr_result.get('key_values'):
-                    for k, v in ocr_result['key_values'].items():
-                        parts.append(f"{k}: {v}")
-                if ocr_result.get('table_rows'):
-                    for row in ocr_result['table_rows']:
-                        parts.append(' '.join(row))
-                raw_text = '\n'.join(parts)
+            # Build raw_text from the new structured format
+            text_parts = []
             
+            # Add headers
+            if ocr_result.get('headers'):
+                text_parts.extend(ocr_result['headers'])
+            
+            # Add paragraphs
+            if ocr_result.get('paragraphs'):
+                text_parts.extend(ocr_result['paragraphs'])
+            
+            # Add bullet points
+            if ocr_result.get('bullet_points'):
+                text_parts.extend(ocr_result['bullet_points'])
+            
+            # Add key-values (now it's a list or dict)
+            key_values = ocr_result.get('key_values', {})
+            if isinstance(key_values, dict):
+                for k, v in key_values.items():
+                    text_parts.append(f"{k}: {v}")
+            elif isinstance(key_values, list):
+                text_parts.extend([str(kv) for kv in key_values])
+            
+            # Add tables
+            if ocr_result.get('tables'):
+                for table in ocr_result['tables']:
+                    if isinstance(table, list):
+                        for row in table:
+                            if isinstance(row, list):
+                                text_parts.append(' | '.join(row))
+                            else:
+                                text_parts.append(str(row))
+            
+            # Add sections content
+            if ocr_result.get('sections'):
+                for section in ocr_result['sections']:
+                    if section.get('title'):
+                        text_parts.append(section['title'])
+                    for item in section.get('content', []):
+                        if isinstance(item, dict) and item.get('text'):
+                            text_parts.append(item['text'])
+            
+            raw_text = '\n'.join(text_parts) if text_parts else ''
+            
+            if not raw_text and ocr_result.get('raw_text'):
+                raw_text = ocr_result['raw_text']
+
             note.raw_text = raw_text
             note.structured_text = raw_text
             note.status = ProcessingStatus.COMPLETED
