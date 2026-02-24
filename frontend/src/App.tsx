@@ -1,62 +1,62 @@
-import { useState } from "react";
+import { useState, useEffect } from 'react';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Dashboard from './pages/Dashboard';
+
+type Page = 'login' | 'register' | 'dashboard';
 
 function App() {
-  const [file, setFile] = useState<File | null>(null); // holds the selected file
-  const [result, setResult] = useState<string>(""); // holds text output returned from backend
-// usestate makes component reactive, so when changed the ui will update automatically
+  const [page, setPage] = useState<Page>('login');
+  const [userEmail, setUserEmail] = useState<string>('');
 
-  const upload = async () => {
-  if (!file) return;
-
-  const form = new FormData();
-  form.append("file", file);
-
-  // send request to backend, which will return the extracted text
-  const res = await fetch("http://localhost:8000/ocr", {
-    method: "POST",
-    body: form
-  });
-
-  /// makes json into js object
-  const data = await res.json();
-
-  // formats structured ocr data
-  let text = "";
-  if (data.key_values) {
-    text += "Key-Values:\n";
-    for (const [k, v] of Object.entries(data.key_values)) {
-      text += `${k}: ${v}\n`;
+  useEffect(() => {
+    // Check if user is already logged in
+    const token = localStorage.getItem('token');
+    const savedEmail = localStorage.getItem('userEmail');
+    
+    if (token && savedEmail) {
+      setUserEmail(savedEmail);
+      setPage('dashboard');
     }
-  }
+  }, []);
 
-  if (data.table_rows) {
-    text += "\nTable Rows:\n";
-    for (const row of data.table_rows) {
-      text += row.join(" | ") + "\n";
-    }
-  }
-// update the state
-  setResult(text);
-  
+  const handleLogin = (token: string, email: string) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('userEmail', email);
+    setUserEmail(email);
+    setPage('dashboard');
   };
 
-  return (
-    <div style={{ padding: 40 }}>
-      <h2>Upload Notes</h2>
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('userEmail');
+    setUserEmail('');
+    setPage('login');
+  };
 
-      <input
-        type="file"
-        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+  if (page === 'login') {
+    return (
+      <Login
+        onLogin={handleLogin}
+        onSwitchToRegister={() => setPage('register')}
       />
+    );
+  }
 
-      <br /><br />
+  if (page === 'register') {
+    return (
+      <Register
+        onRegister={handleLogin}
+        onSwitchToLogin={() => setPage('login')}
+      />
+    );
+  }
 
-      <button onClick={upload}>Upload</button>
-
-      <pre style={{ marginTop: 20 }}>
-        {result}
-      </pre>
-    </div>
+  return (
+    <Dashboard
+      userEmail={userEmail}
+      onLogout={handleLogout}
+    />
   );
 }
 
