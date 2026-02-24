@@ -153,6 +153,34 @@ function App() {
       {/* Document reconstruction */}
       {result && (
         <div style={styles.document}>
+          
+          {/* Stats bar */}
+          <div style={styles.statsBar}>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Sections</span>
+              <span style={styles.statValue}>{result.sections.length}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Headers</span>
+              <span style={styles.statValue}>{result.headers.length}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Key-Values</span>
+              <span style={styles.statValue}>{Object.keys(result.key_values ?? {}).length}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Bullets</span>
+              <span style={styles.statValue}>{result.bullet_points.length}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Tables</span>
+              <span style={styles.statValue}>{result.tables.length}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Paragraphs</span>
+              <span style={styles.statValue}>{result.paragraphs.length}</span>
+            </div>
+          </div>
 
           {/* Unsectioned content first */}
           {hasUnsectionedContent && (
@@ -279,6 +307,32 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: 720,
     margin: "48px auto",
     padding: "0 40px 80px",
+  },
+  statsBar: {
+    display: "flex",
+    justifyContent: "space-around",
+    padding: "20px 0",
+    marginBottom: 32,
+    borderBottom: "2px solid #1a1a1a",
+    gap: 16,
+  },
+  stat: {
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    gap: 4,
+  },
+  statLabel: {
+    fontSize: 11,
+    textTransform: "uppercase" as const,
+    letterSpacing: "1px",
+    color: "#888",
+    fontWeight: "600",
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#1a1a1a",
   },
   unsectioned: {
     marginBottom: 40,
