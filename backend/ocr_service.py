@@ -1,18 +1,26 @@
+import os
+import json
+import re
+import imghdr
+
 from google import genai
-import os, json, re
 
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
 LAYOUT_PROMPT = """
 Analyze this handwritten note image and return ONLY a valid JSON object describing both the content AND the physical layout.
 
-The JSON must have a "elements" array where each element represents a distinct visual region on the page.
+The JSON must have an "elements" array where each element represents a distinct visual region on the page.
 
 Each element must have:
 - "id": unique number starting from 1
 - "type": one of ["header", "paragraph", "bullet_list", "key_value", "diagram", "table", "label"]
-- "content": the transcribed text (or diagram description)
-- "container": one of ["box", "underlined", "circled", "arrow", "none"] - the visual style around this element
+- "content": the transcribed text (or diagram description if type is diagram)
+- "container": one of ["box", "underlined", "circled", "arrow", "none"]
+    - "box" = a rectangular border is drawn AROUND this text block
+    - "underlined" = the text has a line drawn underneath it
+    - "circled" = a circle is drawn around this text block
+    - "none" = no border around this text block
 - "position": object with:
     - "region": rough location e.g. "top-left", "top-right", "top-center", "middle-left", "middle-right", "middle-center", "bottom-left", "bottom-right", "bottom-center"
     - "x_percent": left edge as % of page width (0-100)
@@ -20,44 +28,50 @@ Each element must have:
     - "width_percent": width as % of page width (0-100)
     - "height_percent": height as % of page height (0-100)
 - "style": object with:
-    - "is_bold": true/false (heavier strokes than surrounding text)
-    - "is_large": true/false (larger than surrounding text)
+    - "is_bold": true/false
+    - "is_large": true/false
     - "is_underlined": true/false
-- "children": for bullet lists, array of bullet strings. Empty array otherwise.
+- "children": for bullet_list, array of bullet strings. Empty array otherwise.
 - "connected_to": array of element ids this element points to via arrows. Empty array otherwise.
+- "diagram": ONLY include this field when type is "diagram". It must be an object with:
+    - "description": plain text description of what is drawn
+    - "location": where on the page (e.g. "bottom-left")
+    - "shape": one of ["rectangle", "circle", "triangle", "diamond", "arrow", "none"]
+        - Pick the single most dominant shape in the diagram
+        - Use "none" only if no clear geometric shape exists
+    - "labels": list of ALL text strings found inside or directly labeling the shape
 
 Also include at the top level:
-- "page_layout": one of ["single_column", "two_column", "mixed"] 
+- "page_layout": one of ["single_column", "two_column", "mixed"]
 - "raw_text": full verbatim transcription in reading order
 
-Rules:
-- Estimate positions as best you can from the image
-- If a box contains a header + content, make them separate elements with the same region
-- Arrows between elements should be captured in connected_to
-- Return ONLY the JSON, no markdown, no explanation
+IMPORTANT rules:
+- "container" refers to a border drawn around a TEXT element — not the shape of a diagram
+- If there is a triangle/circle/diamond drawn as a DIAGRAM, set type to "diagram" and diagram.shape accordingly
+- If a text section has a rectangle drawn around it, set container to "box" (not type "diagram")
+- Do NOT set width_percent to less than 80 for elements that visually span most of the page width
+- Return ONLY the JSON object, no markdown, no explanation
 """
 
 PROMPTS = {
     "default": LAYOUT_PROMPT,
     "lecture": LAYOUT_PROMPT + """
 \nExtra instructions for lecture notes:
-- Pay special attention to equations — transcribe them exactly
-- Labeled diagrams should capture every label and arrow
+- Transcribe equations exactly as written
+- Labeled diagrams should capture every label in diagram.labels
 - Defined terms should be type "key_value"
 """,
     "meeting": LAYOUT_PROMPT + """
 \nExtra instructions for meeting notes:
-- Checkboxes: prefix content with [x] or [ ] 
+- Checkboxes: prefix content with [x] or [ ]
 - Action items should be type "bullet_list"
-- Capture any names next to action items in content
+- Capture names next to action items in content
 """
 }
 
 
 def extract_structured_text(image_bytes: bytes, note_type: str = "default") -> dict:
-    import imghdr
     mime = "image/png" if imghdr.what(None, h=image_bytes) == "png" else "image/jpeg"
-
     prompt = PROMPTS.get(note_type, PROMPTS["default"])
 
     response = client.models.generate_content(
@@ -68,9 +82,21 @@ def extract_structured_text(image_bytes: bytes, note_type: str = "default") -> d
         ]
     )
 
-    raw = response.text.strip()
+    raw = response.text
+    if not raw:
+        reason = "empty response"
+        try:
+            reason = str(response.prompt_feedback) or reason
+        except Exception:
+            pass
+        return {
+            "elements": [],
+            "page_layout": "unknown",
+            "raw_text": "",
+            "error": f"Gemini returned no response ({reason})"
+        }
 
-    # Strip markdown fences if model ignores instructions
+    raw = raw.strip()
     raw = re.sub(r"^```json\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
 

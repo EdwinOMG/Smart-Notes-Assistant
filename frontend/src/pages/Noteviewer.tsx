@@ -24,19 +24,13 @@ type ContainerType = "box" | "underlined" | "circled" | "arrow" | "none";
 type ElementType = "header" | "paragraph" | "bullet_list" | "key_value" | "diagram" | "table" | "label";
 type NoteType = "default" | "lecture" | "meeting";
 type PageLayout = "single_column" | "two_column" | "mixed" | "unknown";
-type DiagramShape = "rectangle" | "circle" | "triangle" | "diamond" | "arrow" | "flowchart" | "none";
-
-interface FlowNode {
-  label: string;
-  connects_to: number[];
-}
+type DiagramShape = "rectangle" | "circle" | "triangle" | "diamond" | "arrow" | "none";
 
 interface DiagramData {
   description: string;
   location: string;
   shape: DiagramShape;
   labels: string[];
-  nodes?: FlowNode[];
 }
 
 interface ElementPosition {
@@ -68,7 +62,6 @@ interface NoteElementData {
 interface NoteMetadata {
   model: string;
   note_type: NoteType;
-  config_used?: string;
 }
 
 interface NoteResponse {
@@ -96,6 +89,7 @@ const sortByPosition = (elements: NoteElementData[]): NoteElementData[] =>
 const shouldUseColumns = (layout: PageLayout, left: NoteElementData[], right: NoteElementData[]): boolean =>
   (layout === "two_column" || layout === "mixed") && left.length > 0 && right.length > 0;
 
+// Only box/underlined/circled affect visual style — never constrain width from position data
 const getContainerStyle = (container: ContainerType): CSSProperties => {
   switch (container) {
     case "box":
@@ -115,41 +109,29 @@ const getContainerStyle = (container: ContainerType): CSSProperties => {
   }
 };
 
-// ── SVG helpers ───────────────────────────────────────────────────────────────
+// ── SVG text helper ───────────────────────────────────────────────────────────
 
-// Wraps long text into lines for SVG <text> elements
-function SvgTextLines({ text, x, y, maxWidth, fontSize = 11, fill = COLORS.text }: {
-  text: string; x: number; y: number; maxWidth: number; fontSize?: number; fill?: string;
+function SvgText({ lines, cx, cy, shapeH, fontSize = 12 }: {
+  lines: string[]; cx: number; cy: number; shapeH: number; fontSize?: number;
 }) {
-  const words = text.split(" ");
-  const lines: string[] = [];
-  let current = "";
-  const charsPerLine = Math.floor(maxWidth / (fontSize * 0.6));
-  for (const word of words) {
-    if ((current + " " + word).trim().length > charsPerLine) {
-      if (current) lines.push(current.trim());
-      current = word;
-    } else {
-      current = (current + " " + word).trim();
-    }
-  }
-  if (current) lines.push(current.trim());
-
-  const lineHeight = fontSize * 1.4;
-  const totalHeight = lines.length * lineHeight;
-  const startY = y - totalHeight / 2 + lineHeight / 2;
+  const lineH = fontSize * 1.45;
+  // Scale font down if text won't fit vertically
+  const maxLines = Math.floor((shapeH * 0.7) / lineH);
+  const visibleLines = lines.slice(0, maxLines);
+  const totalH = visibleLines.length * lineH;
+  const startY = cy - totalH / 2 + lineH / 2;
 
   return (
     <>
-      {lines.map((line, i) => (
+      {visibleLines.map((line, i) => (
         <text
           key={i}
-          x={x}
-          y={startY + i * lineHeight}
+          x={cx}
+          y={startY + i * lineH}
           textAnchor="middle"
           dominantBaseline="middle"
           fontSize={fontSize}
-          fill={fill}
+          fill={COLORS.text}
           fontFamily="'DM Sans', sans-serif"
         >
           {line}
@@ -159,124 +141,82 @@ function SvgTextLines({ text, x, y, maxWidth, fontSize = 11, fill = COLORS.text 
   );
 }
 
+// Wraps a string into lines that fit within maxChars per line
+function wrapText(text: string, maxChars: number): string[] {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    if ((current + " " + word).trim().length > maxChars) {
+      if (current) lines.push(current.trim());
+      current = word;
+    } else {
+      current = (current + " " + word).trim();
+    }
+  }
+  if (current) lines.push(current.trim());
+  return lines;
+}
+
 // ── ShapeRenderer ─────────────────────────────────────────────────────────────
 
 function ShapeRenderer({ diagram }: { diagram: DiagramData }) {
-  const { shape, labels, nodes, description } = diagram;
-  const strokeProps = { stroke: COLORS.accent, strokeWidth: 1.5, fill: COLORS.accentSoft };
+  const { shape, labels, description } = diagram;
+  const allText = labels?.length ? labels.join(" · ") : description;
+  const stroke = { stroke: COLORS.accent, strokeWidth: 1.5, fill: COLORS.accentSoft };
 
-  // ── Circle ──
   if (shape === "circle") {
+    const lines = wrapText(allText, 18);
     return (
-      <svg viewBox="0 0 220 160" width="100%" style={{ maxWidth: "260px", display: "block", margin: "0 auto" }}>
-        <ellipse cx="110" cy="80" rx="100" ry="70" {...strokeProps} />
-        {labels.length > 0 && (
-          <SvgTextLines text={labels[0]} x={110} y={70} maxWidth={180} fontSize={11} />
-        )}
-        {labels.slice(1).map((l, i) => (
-          <text key={i} x={110} y={100 + i * 14} textAnchor="middle" fontSize={9} fill={COLORS.textMuted} fontFamily="'DM Sans', sans-serif">{l}</text>
-        ))}
+      <svg viewBox="0 0 200 160" width="100%" style={{ maxWidth: "240px", display: "block", margin: "0 auto" }}>
+        <ellipse cx="100" cy="80" rx="94" ry="70" {...stroke} />
+        <SvgText lines={lines} cx={100} cy={80} shapeH={140} fontSize={12} />
       </svg>
     );
   }
 
-  // ── Triangle ──
   if (shape === "triangle") {
+    const lines = wrapText(allText, 16);
     return (
-      <svg viewBox="0 0 220 190" width="100%" style={{ maxWidth: "260px", display: "block", margin: "0 auto" }}>
-        <polygon points="110,12 208,178 12,178" {...strokeProps} />
-        {labels.length > 0 && (
-          <SvgTextLines text={labels[0]} x={110} y={140} maxWidth={140} fontSize={11} />
-        )}
-        {labels.slice(1).map((l, i) => (
-          <text key={i} x={110} y={160 + i * 13} textAnchor="middle" fontSize={9} fill={COLORS.textMuted} fontFamily="'DM Sans', sans-serif">{l}</text>
-        ))}
+      <svg viewBox="0 0 200 180" width="100%" style={{ maxWidth: "240px", display: "block", margin: "0 auto" }}>
+        <polygon points="100,8 196,172 4,172" {...stroke} />
+        {/* Text sits in the lower two-thirds of the triangle */}
+        <SvgText lines={lines} cx={100} cy={130} shapeH={100} fontSize={11} />
       </svg>
     );
   }
 
-  // ── Diamond ──
   if (shape === "diamond") {
+    const lines = wrapText(allText, 14);
     return (
-      <svg viewBox="0 0 220 220" width="100%" style={{ maxWidth: "260px", display: "block", margin: "0 auto" }}>
-        <polygon points="110,10 210,110 110,210 10,110" {...strokeProps} />
-        {labels.length > 0 && (
-          <SvgTextLines text={labels[0]} x={110} y={105} maxWidth={130} fontSize={11} />
-        )}
-        {labels.slice(1).map((l, i) => (
-          <text key={i} x={110} y={128 + i * 13} textAnchor="middle" fontSize={9} fill={COLORS.textMuted} fontFamily="'DM Sans', sans-serif">{l}</text>
-        ))}
+      <svg viewBox="0 0 200 200" width="100%" style={{ maxWidth: "240px", display: "block", margin: "0 auto" }}>
+        <polygon points="100,6 194,100 100,194 6,100" {...stroke} />
+        <SvgText lines={lines} cx={100} cy={100} shapeH={120} fontSize={11} />
       </svg>
     );
   }
 
-  // ── Arrow ──
   if (shape === "arrow") {
+    const lines = wrapText(allText, 18);
     return (
       <svg viewBox="0 0 240 80" width="100%" style={{ maxWidth: "280px", display: "block", margin: "0 auto" }}>
-        <polygon points="0,22 175,22 175,5 240,40 175,75 175,58 0,58" {...strokeProps} />
-        {labels.length > 0 && (
-          <SvgTextLines text={labels[0]} x={90} y={40} maxWidth={160} fontSize={11} />
-        )}
+        <polygon points="0,22 175,22 175,4 240,40 175,76 175,58 0,58" {...stroke} />
+        <SvgText lines={lines} cx={90} cy={40} shapeH={36} fontSize={11} />
       </svg>
     );
   }
 
-  // ── Rectangle (explicit shape, not container) ──
   if (shape === "rectangle") {
+    const lines = wrapText(allText, 22);
     return (
       <svg viewBox="0 0 240 120" width="100%" style={{ maxWidth: "280px", display: "block", margin: "0 auto" }}>
-        <rect x={10} y={10} width={220} height={100} rx={8} {...strokeProps} />
-        {labels.length > 0 && (
-          <SvgTextLines text={labels[0]} x={120} y={55} maxWidth={200} fontSize={11} />
-        )}
-        {labels.slice(1).map((l, i) => (
-          <text key={i} x={120} y={75 + i * 13} textAnchor="middle" fontSize={9} fill={COLORS.textMuted} fontFamily="'DM Sans', sans-serif">{l}</text>
-        ))}
+        <rect x={8} y={8} width={224} height={104} rx={8} {...stroke} />
+        <SvgText lines={lines} cx={120} cy={60} shapeH={90} fontSize={12} />
       </svg>
     );
   }
 
-  // ── Flowchart ──
-  if (shape === "flowchart" && nodes && nodes.length > 0) {
-    const nodeH = 44;
-    const nodeW = 180;
-    const gapY = 50;
-    const cx = 120;
-    const totalH = nodes.length * (nodeH + gapY) + 20;
-
-    return (
-      <svg viewBox={`0 0 240 ${totalH}`} width="100%" style={{ maxWidth: "280px", display: "block", margin: "0 auto" }}>
-        <defs>
-          <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-            <path d="M0,0 L0,8 L8,4 Z" fill={COLORS.accent} />
-          </marker>
-        </defs>
-        {nodes.map((node, i) => {
-          const y = i * (nodeH + gapY) + 10;
-          const midY = y + nodeH / 2;
-          return (
-            <g key={i}>
-              <rect x={cx - nodeW / 2} y={y} width={nodeW} height={nodeH} rx={6} {...strokeProps} />
-              <SvgTextLines text={node.label} x={cx} y={midY} maxWidth={nodeW - 16} fontSize={10} />
-              {node.connects_to?.map((_, j) => (
-                <line
-                  key={j}
-                  x1={cx} y1={y + nodeH}
-                  x2={cx} y2={y + nodeH + gapY - 4}
-                  stroke={COLORS.accent}
-                  strokeWidth={1.5}
-                  markerEnd="url(#arrowhead)"
-                />
-              ))}
-            </g>
-          );
-        })}
-      </svg>
-    );
-  }
-
-  // ── Fallback: prose description ──
+  // none / unknown — plain italic description
   return (
     <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "0.88rem", color: "#b0b0c8", lineHeight: 1.65, margin: 0, fontStyle: "italic" }}>
       {description}
@@ -292,56 +232,27 @@ function DiagramCard({ el, onDismiss }: { el: NoteElementData; onDismiss: () => 
 
   return (
     <div
-      style={{ position: "relative", border: `1.5px dashed ${COLORS.textDim}`, borderRadius: "10px", padding: "16px 18px", marginBottom: "18px", background: COLORS.surface, transition: "border-color 0.2s" }}
+      style={{ position: "relative", border: `1.5px dashed ${COLORS.textDim}`, borderRadius: "10px", padding: "14px", marginBottom: "18px", background: COLORS.surface, transition: "border-color 0.2s" }}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = COLORS.accent)}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = COLORS.textDim)}
     >
-      {/* Dismiss */}
+      {/* Dismiss button — only UI chrome, no title/label */}
       <button
         onClick={onDismiss}
         title="Remove"
-        style={{ position: "absolute", top: "10px", right: "10px", background: "transparent", border: `1px solid ${COLORS.border}`, color: COLORS.textMuted, width: "22px", height: "22px", borderRadius: "50%", cursor: "pointer", fontSize: "0.7rem", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, transition: "all 0.15s", zIndex: 1 }}
+        style={{ position: "absolute", top: "8px", right: "8px", background: "transparent", border: `1px solid ${COLORS.border}`, color: COLORS.textMuted, width: "20px", height: "20px", borderRadius: "50%", cursor: "pointer", fontSize: "0.65rem", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, transition: "all 0.15s", zIndex: 1 }}
         onMouseEnter={(e) => { e.currentTarget.style.background = COLORS.red; e.currentTarget.style.borderColor = COLORS.red; e.currentTarget.style.color = "#fff"; }}
         onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = COLORS.border; e.currentTarget.style.color = COLORS.textMuted; }}
       >
         ✕
       </button>
 
-      {/* Label row */}
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-        <span style={{ fontFamily: "'Syne', sans-serif", fontSize: "0.65rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.12em" }}>
-          📐 Diagram
-        </span>
-        {hasShape && (
-          <span style={{ fontSize: "0.65rem", color: COLORS.accent, background: COLORS.accentSoft, border: `1px solid ${COLORS.boxBorder}`, borderRadius: "4px", padding: "1px 6px", fontFamily: "'DM Sans', sans-serif", textTransform: "capitalize" }}>
-            {diagram!.shape}
-          </span>
-        )}
-        {el.position?.region && (
-          <span style={{ fontSize: "0.65rem", color: COLORS.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
-            · {el.position.region}
-          </span>
-        )}
-      </div>
-
-      {/* Shape or fallback */}
       {diagram && hasShape ? (
         <ShapeRenderer diagram={diagram} />
       ) : (
         <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "0.88rem", color: "#b0b0c8", lineHeight: 1.65, margin: 0, fontStyle: "italic", paddingRight: "24px" }}>
           {el.content}
         </p>
-      )}
-
-      {/* Extra labels as tags (for non-flowchart shapes) */}
-      {diagram?.labels && diagram.labels.length > 1 && diagram.shape !== "flowchart" && (
-        <div style={{ marginTop: "10px", display: "flex", flexWrap: "wrap", gap: "6px" }}>
-          {diagram.labels.slice(1).map((label, i) => (
-            <span key={i} style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "0.72rem", color: COLORS.accent, background: COLORS.accentSoft, border: `1px solid ${COLORS.boxBorder}`, borderRadius: "4px", padding: "2px 8px" }}>
-              {label}
-            </span>
-          ))}
-        </div>
       )}
     </div>
   );
@@ -354,7 +265,12 @@ function NoteElement({ el, onDismissDiagram }: { el: NoteElementData; onDismissD
     return <DiagramCard el={el} onDismiss={() => onDismissDiagram(el.id)} />;
   }
 
-  const wrapStyle: CSSProperties = { marginBottom: "18px", ...getContainerStyle(el.container) };
+  // Never constrain width from position data — always let elements fill their container
+  const wrapStyle: CSSProperties = {
+    width: "100%",
+    marginBottom: "18px",
+    ...getContainerStyle(el.container),
+  };
 
   if (el.type === "header") {
     return (
@@ -389,6 +305,7 @@ function NoteElement({ el, onDismissDiagram }: { el: NoteElementData; onDismissD
     );
   }
 
+  // paragraph / label / other
   return (
     <div style={wrapStyle}>
       <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "0.95rem", color: el.style?.is_bold ? COLORS.text : "#c0c0d4", lineHeight: 1.8, margin: 0, fontWeight: el.style?.is_bold ? 600 : 400 }}>
@@ -410,7 +327,7 @@ function NoteCanvas({ elements, layout, dismissed, onDismissDiagram }: {
 
   if (layout === "single_column" || layout === "unknown") {
     return (
-      <div>
+      <div style={{ width: "100%" }}>
         {sortByPosition(visible).map((el) => (
           <NoteElement key={el.id} el={el} onDismissDiagram={onDismissDiagram} />
         ))}
@@ -424,7 +341,7 @@ function NoteCanvas({ elements, layout, dismissed, onDismissDiagram }: {
 
   if (!shouldUseColumns(layout, left, right)) {
     return (
-      <div>
+      <div style={{ width: "100%" }}>
         {sortByPosition(visible).map((el) => (
           <NoteElement key={el.id} el={el} onDismissDiagram={onDismissDiagram} />
         ))}
@@ -433,7 +350,8 @@ function NoteCanvas({ elements, layout, dismissed, onDismissDiagram }: {
   }
 
   return (
-    <div>
+    <div style={{ width: "100%" }}>
+      {/* Center elements always span full width */}
       {sortByPosition(center).map((el) => (
         <NoteElement key={el.id} el={el} onDismissDiagram={onDismissDiagram} />
       ))}
@@ -598,6 +516,7 @@ export default function NoteViewer({ onLogout }: NoteViewerProps) {
         {noteData && (
           <div style={{ animation: "fadeUp 0.4s ease" }}>
             <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: "36px", alignItems: "start" }}>
+
               {/* Left panel */}
               <div style={{ position: "sticky", top: "80px" }}>
                 <div style={{ fontSize: "0.65rem", fontFamily: "'Syne', sans-serif", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "10px" }}>Original</div>
@@ -617,9 +536,9 @@ export default function NoteViewer({ onLogout }: NoteViewerProps) {
               </div>
 
               {/* Right panel */}
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: "0.65rem", fontFamily: "'Syne', sans-serif", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "10px" }}>Rebuilt</div>
-                <div style={{ background: COLORS.surface, borderRadius: "16px", border: `1px solid ${COLORS.border}`, padding: "32px 36px" }}>
+                <div style={{ background: COLORS.surface, borderRadius: "16px", border: `1px solid ${COLORS.border}`, padding: "32px 36px", width: "100%" }}>
                   <NoteCanvas elements={noteData.elements ?? []} layout={noteData.page_layout} dismissed={dismissed} onDismissDiagram={handleDismissDiagram} />
                 </div>
                 <details style={{ marginTop: "14px" }}>
@@ -631,6 +550,7 @@ export default function NoteViewer({ onLogout }: NoteViewerProps) {
                   </pre>
                 </details>
               </div>
+
             </div>
           </div>
         )}
