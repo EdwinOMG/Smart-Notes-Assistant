@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     google_cloud_api_key: str = ""
     google_application_credentials: str = ""
     
+
+    #AI KEY
+    gemini_api_key: str
     class Config:
         env_file = ".env"
 

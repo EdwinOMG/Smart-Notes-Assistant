@@ -50,7 +50,7 @@ class NoteController:
             
             # Add headers
             if ocr_result.get('headers'):
-                text_parts.extend(ocr_result['headers'])
+                text_parts.extend([h['text'] if isinstance(h, dict) else h for h in ocr_result['headers']])
             
             # Add paragraphs
             if ocr_result.get('paragraphs'):
@@ -81,8 +81,9 @@ class NoteController:
             # Add sections content
             if ocr_result.get('sections'):
                 for section in ocr_result['sections']:
-                    if section.get('title'):
-                        text_parts.append(section['title'])
+                    title = section.get('title')
+                    if title:
+                        text_parts.append(title['text'] if isinstance(title, dict) else title)
                     for item in section.get('content', []):
                         if isinstance(item, dict) and item.get('text'):
                             text_parts.append(item['text'])

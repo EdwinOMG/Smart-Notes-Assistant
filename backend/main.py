@@ -8,7 +8,7 @@ load_dotenv()
 if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
 
-from fastapi import FastAPI, UploadFile, File, Depends
+from fastapi import FastAPI, UploadFile, File, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -49,21 +49,21 @@ def startup_event():
 
 # Original OCR endpoint (no auth - for testing)
 @app.post("/ocr")
-async def ocr(file: UploadFile = File(...)):
-    """OCR endpoint (no authentication required)."""
-    contents = await file.read()
+async def ocr(
     
+    file: UploadFile = File(...),
+    note_type: str = Query(default="default", enum=["default", "lecture", "meeting"])
+):
+    contents = await file.read()
     if not contents:
         return {"error": "Uploaded file is empty"}
     
-    print(f"File name: {file.filename}, Content type: {file.content_type}, Size: {len(contents)} bytes")
-    
     try:
-        structured_data = extract_structured_text(contents)
+        structured_data = extract_structured_text(contents, note_type=note_type)
     except Exception as e:
         return {"error": str(e)}
-    
-    print(structured_data)
+    print("GEMINI KEY:", os.environ.get("GEMINI_API_KEY", "NOT FOUND")[:10])
+
     return structured_data
 
 

@@ -25,3 +25,6 @@ email-validator>=2.0.0
 # Image Preprocessing
 opencv-python>=4.8.0
 numpy>=1.24.0
+
+#AI
+google-genai
