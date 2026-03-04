@@ -40,6 +40,9 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(note_router)
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 @app.on_event("startup")
 def startup_event():
@@ -70,4 +73,4 @@ async def ocr(file: UploadFile = File(...)):
 @app.get("/")
 def root():
     """Root endpoint."""
-    return {"message": "Welcome to NotePeel API 🐵🍌", "docs": "/docs"}
+    return {"message": "Welcome to NotePeel API 🐵🍌", "docs": "/docs", "health": "/health"}
