@@ -54,18 +54,21 @@ def startup_event():
 @app.post("/ocr")
 async def ocr(file: UploadFile = File(...)):
     """OCR endpoint (no authentication required)."""
+    if file.content_type not in {"application/pdf", "image/png", "image/jpeg", "image/jpg"}:
+        return {"error": f"Unsupported content type: {file.content_type}"}
+
     contents = await file.read()
-    
+
     if not contents:
         return {"error": "Uploaded file is empty"}
-    
+
     print(f"File name: {file.filename}, Content type: {file.content_type}, Size: {len(contents)} bytes")
-    
+
     try:
         structured_data = extract_structured_text(contents)
     except Exception as e:
-        return {"error": str(e)}
-    
+        return {"error": "OCR failed", "detail": str(e)}
+
     print(structured_data)
     return structured_data
 
