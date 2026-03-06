@@ -22,7 +22,8 @@ class NoteController:
         db: Session,
         file: UploadFile,
         user: User,
-        title: Optional[str] = None
+        title: Optional[str] = None,
+        note_type: str = "default"
     ) -> Note:
         """Create a new note from an uploaded image."""
         file_content = await file.read()
@@ -41,59 +42,97 @@ class NoteController:
         db.commit()
         db.refresh(note)
         
-        # Perform OCR
+        # Perform OCR with Gemini
         try:
-            ocr_result = extract_structured_text(file_content)
+            ocr_result = extract_structured_text(file_content, note_type=note_type)
             
-            # Build raw_text from the new structured format
-            text_parts = []
+            # Check for errors from Gemini
+            if ocr_result.get('error'):
+                raise Exception(ocr_result['error'])
             
-            # Add headers
-            if ocr_result.get('headers'):
-                text_parts.extend(ocr_result['headers'])
+            # Build formatted HTML from elements
+            html_parts = []
+            elements = ocr_result.get('elements', [])
             
-            # Add paragraphs
-            if ocr_result.get('paragraphs'):
-                text_parts.extend(ocr_result['paragraphs'])
+            # Sort by position
+            sorted_elements = sorted(elements, key=lambda e: (e.get('position', {}).get('y_percent', 0), e.get('position', {}).get('x_percent', 0)))
             
-            # Add bullet points
-            if ocr_result.get('bullet_points'):
-                text_parts.extend(ocr_result['bullet_points'])
+            for element in sorted_elements:
+                el_type = element.get('type', '')
+                content = element.get('content', '')
+                container = element.get('container', 'none')
+                style = element.get('style', {})
+                children = element.get('children', [])
+                
+                # Build inline styles based on container type
+                container_style = ''
+                if container == 'box':
+                    container_style = 'border: 2px solid #FFB74D; border-radius: 8px; padding: 12px 16px; background: #FFF8E1; margin: 10px 0;'
+                elif container == 'underlined':
+                    container_style = 'border-bottom: 3px solid #FF9800; padding-bottom: 4px;'
+                elif container == 'circled':
+                    container_style = 'border: 2px solid #FFB74D; border-radius: 50px; padding: 6px 16px; display: inline-block;'
+                
+                if el_type == 'header':
+                    size = '1.6em' if style.get('is_large') else '1.3em'
+                    html_parts.append(f'<h2 style="font-size: {size}; color: #5D4037; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 0.05em; {container_style}">{content}</h2>')
+                
+                elif el_type == 'bullet_list':
+                    bullets_html = ''.join([f'<div style="display: flex; gap: 10px; margin-bottom: 8px;"><span style="color: #FF9800; font-weight: bold;">◆</span><span>{child}</span></div>' for child in children])
+                    html_parts.append(f'<div style="margin: 15px 0; {container_style}">{bullets_html}</div>')
+                
+                elif el_type == 'key_value':
+                    parts = content.split(':', 1)
+                    if len(parts) == 2:
+                        html_parts.append(f'<div style="margin: 10px 0; {container_style}"><span style="color: #FF9800; font-weight: bold; text-transform: uppercase;">{parts[0]}:</span> {parts[1]}</div>')
+                    else:
+                        html_parts.append(f'<div style="margin: 10px 0; {container_style}">{content}</div>')
+                
+                elif el_type == 'diagram':
+                    diagram = element.get('diagram', {})
+                    desc = diagram.get('description', content)
+                    labels = diagram.get('labels', [])
+                    labels_text = ', '.join(labels) if labels else ''
+                    labels_html = f'<div style="margin-top: 8px; color: #FF9800;">Labels: {labels_text}</div>' if labels_text else ''
+                    html_parts.append(f'<div style="border: 2px dashed #FFB74D; border-radius: 12px; padding: 20px; margin: 15px 0; background: #FFF8E1; text-align: center;"><div style="color: #5D4037; font-style: italic;">📊 {desc}</div>{labels_html}</div>')
+                
+                elif el_type == 'paragraph':
+                    weight = 'bold' if style.get('is_bold') else 'normal'
+                    html_parts.append(f'<p style="margin: 12px 0; line-height: 1.8; font-weight: {weight}; {container_style}">{content}</p>')
+                
+                else:
+                    if content:
+                        html_parts.append(f'<p style="margin: 12px 0; line-height: 1.8; {container_style}">{content}</p>')
             
-            # Add key-values (now it's a list or dict)
-            key_values = ocr_result.get('key_values', {})
-            if isinstance(key_values, dict):
-                for k, v in key_values.items():
-                    text_parts.append(f"{k}: {v}")
-            elif isinstance(key_values, list):
-                text_parts.extend([str(kv) for kv in key_values])
+            structured_html = ''.join(html_parts) if html_parts else ''
             
-            # Add tables
-            if ocr_result.get('tables'):
-                for table in ocr_result['tables']:
-                    if isinstance(table, list):
-                        for row in table:
-                            if isinstance(row, list):
-                                text_parts.append(' | '.join(row))
-                            else:
-                                text_parts.append(str(row))
-            
-            # Add sections content
-            if ocr_result.get('sections'):
-                for section in ocr_result['sections']:
-                    if section.get('title'):
-                        text_parts.append(section['title'])
-                    for item in section.get('content', []):
-                        if isinstance(item, dict) and item.get('text'):
-                            text_parts.append(item['text'])
-            
-            raw_text = '\n'.join(text_parts) if text_parts else ''
-            
-            if not raw_text and ocr_result.get('raw_text'):
-                raw_text = ocr_result['raw_text']
+            # Fallback to raw_text if no HTML generated
+            if not structured_html:
+                # Build from text_parts as before
+                text_parts = []
+                for element in sorted_elements:
+                    el_type = element.get('type', '')
+                    content = element.get('content', '')
+                    children = element.get('children', [])
+                    
+                    if el_type == 'header':
+                        text_parts.append(f"\n{content}\n")
+                    elif el_type == 'bullet_list':
+                        for child in children:
+                            text_parts.append(f"  • {child}")
+                    elif el_type == 'diagram':
+                        diagram = element.get('diagram', {})
+                        text_parts.append(f"[Diagram: {diagram.get('description', content)}]")
+                    elif content:
+                        text_parts.append(content)
+                
+                raw_text = '\n'.join(text_parts) if text_parts else ''
+                if not raw_text and ocr_result.get('raw_text'):
+                    raw_text = ocr_result['raw_text']
+                structured_html = raw_text.replace('\n', '<br>')
 
-            note.raw_text = raw_text
-            note.structured_text = raw_text
+            note.raw_text = ocr_result.get('raw_text', '')
+            note.structured_text = structured_html
             note.status = ProcessingStatus.COMPLETED
             note.processed_at = datetime.utcnow()
             
