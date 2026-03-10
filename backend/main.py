@@ -57,6 +57,8 @@ async def ocr(
     - lecture: Optimized for lecture notes with equations and diagrams
     - meeting: Optimized for meeting notes with checkboxes and action items
     """
+    if file.content_type not in {"application/pdf", "image/png", "image/jpeg", "image/jpg"}:
+        return {"error": f"Unsupported content type: {file.content_type}"}
     contents = await file.read()
     if not contents:
         return {"error": "Uploaded file is empty"}
@@ -68,6 +70,9 @@ async def ocr(
 
     return structured_data
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 @app.get("/")
 def root():
@@ -76,5 +81,7 @@ def root():
         "message": "Welcome to NotePeel API 🐵🍌",
         "version": "2.0.0",
         "ai": "Gemini",
-        "docs": "/docs"
+        "docs": "/docs",
+        "health": "/health"
+
     }
